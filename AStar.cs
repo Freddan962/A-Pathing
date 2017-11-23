@@ -150,77 +150,77 @@ public class AStar : MonoBehaviour {
 
 	private void performAStarPathing()
 	{
-		//Aka the step that will take us the fastest to our goal
-		Step currentStep = _open[0];
-		//currentStep.Score.Total = currentStep.Score.Movement + currentStep.Score.Heuristics;
-
-		//Lock the closest step
-		_closed.Add(currentStep);
-		_open.Remove(currentStep);
-
-		List<Vector2> adjacentSteps = Grid.getAdjacentWalkableTilePositions(currentStep.Position);
-		//Iterate over each adjacent step from the current step
-		foreach (Vector2 v in adjacentSteps)
+		//CurrentStep aka the step(s) that will take us the fastest to our goal
+		foreach (Step currentStep in GetStepsWithLowestScore())
 		{
-			Step step = new Step(v);
+			//Lock the closest step
+			_closed.Add(currentStep);
+			_open.Remove(currentStep);
 
-			//If the step already has been closed we continue
-			if (_closed.Contains(step))
-				continue;
-
-			//Calculate the moveCost for the currentStep to this adjacentStep
-			int moveCost = costToMoveFromStep(currentStep.Position, step.Position);
-
-			//Check if this adjacent step is open
-			bool containsCoordinates = false;
-			foreach (Step openStep in _open)
-				if (openStep.Position.x == step.Position.x && openStep.Position.y == step.Position.y)
-					containsCoordinates = true;
-
-			//If the adjacent step is open
-			if (containsCoordinates)
+			List<Vector2> adjacentSteps = Grid.getAdjacentWalkableTilePositions(currentStep.Position);
+			//Iterate over each adjacent step from the current step
+			foreach (Vector2 v in adjacentSteps)
 			{
-				//Then we update it's movement cost and re-arrange the order array
-				step = _open[_open.IndexOf(step)];
-				if (currentStep.Score.Movement + moveCost < step.Score.Movement)
+				Step step = new Step(v);
+
+				//If the step already has been closed we continue
+				if (_closed.Contains(step))
+					continue;
+
+				//Calculate the moveCost for the currentStep to this adjacentStep
+				int moveCost = costToMoveFromStep(currentStep.Position, step.Position);
+
+				//Check if this adjacent step is open
+				bool containsCoordinates = false;
+				foreach (Step openStep in _open)
+					if (openStep.Position.x == step.Position.x && openStep.Position.y == step.Position.y)
+						containsCoordinates = true;
+
+				//If the adjacent step is open
+				if (containsCoordinates)
 				{
+					//Then we update it's movement cost and re-arrange the order array
+					step = _open[_open.IndexOf(step)];
+					if (currentStep.Score.Movement + moveCost < step.Score.Movement)
+					{
+						step.Score.Movement = currentStep.Score.Movement + moveCost;
+						step.Score.Total = step.Score.Movement + step.Score.Heuristics; //Tillagt nu
+						orderOpenSteps();
+					}
+				}
+				else //If the adjacent step is not open yet, we add the step to the open list
+				{
+					step.ParentStep = currentStep;
 					step.Score.Movement = currentStep.Score.Movement + moveCost;
-					step.Score.Total = step.Score.Movement + step.Score.Heuristics; //Tillagt nu
-					orderOpenSteps();
+					step.Score.Heuristics = computeHeuristicsScoreFromCoord(step.Position, TargetGridPosition);
+					step.Score.Total = step.Score.Movement + step.Score.Heuristics;
+					insertInOpenSteps(step);
+				}
+
+				//We occupy this tile in memory but not visually to prevent duplicate paths
+				if (!Grid.isOccupied(step.Position))
+					Grid.addEmptyTile(step.Position);
+			}
+
+			//Responsible for creating the visible debugging tiles
+			if (Debugging)
+			{
+				if (!DebugObjectDict.ContainsKey(currentStep.Position))
+				{
+					GameObject debugObj = Instantiate(DebugObject, Grid.gridPositionToWorldPosition(currentStep.Position), Quaternion.identity, DebugObjectParent);
+				
+					DebugObjectDict.Add(currentStep.Position, debugObj);
+
+					PathDebugText textModule = debugObj.GetComponent<PathDebugText>();
+					textModule.TextTotal.text = currentStep.Score.Total.ToString();
+					textModule.TextHeuristics.text = currentStep.Score.Heuristics.ToString();
+					textModule.TextMovement.text = currentStep.Score.Movement.ToString();
 				}
 			}
-			else //If the adjacent step is not open yet, we add the step to the open list
-			{
-				step.ParentStep = currentStep;
-				step.Score.Movement = currentStep.Score.Movement + moveCost;
-				step.Score.Heuristics = computeHeuristicsScoreFromCoord(step.Position, TargetGridPosition);
-				step.Score.Total = step.Score.Movement + step.Score.Heuristics;
-				insertInOpenSteps(step);
-			}
 
-			//We occupy this tile in memory but not visually to prevent duplicate paths
-			if (!Grid.isOccupied(step.Position))
-				Grid.addEmptyTile(step.Position);
+			this.transform.position = Grid.gridPositionToWorldPosition(currentStep.Position);
+			ActivePathingPosition = currentStep.Position;
 		}
-
-		//Responsible for creating the visible debugging tiles
-		if (Debugging)
-		{
-			if (!DebugObjectDict.ContainsKey(currentStep.Position))
-			{
-				GameObject debugObj = Instantiate(DebugObject, Grid.gridPositionToWorldPosition(currentStep.Position), Quaternion.identity, DebugObjectParent);
-			
-				DebugObjectDict.Add(currentStep.Position, debugObj);
-
-				PathDebugText textModule = debugObj.GetComponent<PathDebugText>();
-				textModule.TextTotal.text = currentStep.Score.Total.ToString();
-				textModule.TextHeuristics.text = currentStep.Score.Heuristics.ToString();
-				textModule.TextMovement.text = currentStep.Score.Movement.ToString();
-			}
-		}
-
-		this.transform.position = Grid.gridPositionToWorldPosition(currentStep.Position);
-		ActivePathingPosition = currentStep.Position;
 	}
 
 	//Inserts a step into the _open list and order list after it's total score
@@ -235,6 +235,20 @@ public class AStar : MonoBehaviour {
 	{
 		//Ascending [0, 15, 31..]
 		_open = _open.OrderBy((step) => step.Score.Total).ToList();
+	}
+
+	private List<Step> GetStepsWithLowestScore()
+	{
+		orderOpenSteps();
+		List<Step> steps = new List<Step>();
+
+		foreach (Step step in _open)
+		{
+			if (step.Score.Total == _open[0].Score.Total)
+				steps.Add(step);
+		}
+
+		return steps;
 	}
 
 	private int computeHeuristicsScoreFromCoord(Vector2 fromPos, Vector2 toPos)
